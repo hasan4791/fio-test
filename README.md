@@ -1,6 +1,6 @@
 # FIO Test Suite
 
-A comprehensive bash-based test suite for running and analyzing FIO (Flexible I/O Tester) benchmarks with various block sizes and I/O patterns.
+A comprehensive bash-based test suite for running and analyzing FIO (Flexible I/O Tester) benchmarks with various block sizes and I/O patterns. Available as both standalone scripts and containerized solution with Ceph support.
 
 ## Overview
 
@@ -16,9 +16,26 @@ This suite consists of two main scripts:
 - ✅ Support for read, write, and random read/write patterns
 - ✅ Automatic result aggregation and extraction
 - ✅ Robust error checking and cleanup
+- ✅ Container support with Ceph integration
+- ✅ Ready-to-use container image with all dependencies
+
+## Table of Contents
+
+- [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start)
+  - [Standalone Usage](#standalone-usage)
+  - [Container Usage](#container-usage)
+- [Configuration Options](#configuration-options)
+- [Container Deployment](#container-deployment)
+- [Test Matrix](#test-matrix)
+- [Output](#output)
+- [Best Practices](#best-practices)
+- [Examples](#examples)
+- [Troubleshooting](#troubleshooting)
 
 ## Prerequisites
 
+### Standalone Usage
 - **FIO**: Flexible I/O Tester must be installed
   ```bash
   # Ubuntu/Debian
@@ -31,9 +48,13 @@ This suite consists of two main scripts:
   brew install fio
   ```
 
+### Container Usage
+- **Podman** or **Docker** container runtime
+- Ceph configuration files (for Ceph filesystem testing)
+
 ## Quick Start
 
-### Basic Usage
+### Standalone Usage
 
 ```bash
 # Set required environment variables
@@ -54,7 +75,7 @@ export FNAME=/mnt/nvme/testfile
 export TEST_DIR=/var/fio-results
 
 # Optional: Configure FIO parameters
-export FIO_IOENGINE=libaio    # I/O engine (default: libaio)
+export FIO_IOENGINE=libaio    # I/O engine (default: sync)
 export FIO_IODEPTH=64         # I/O queue depth (default: 64)
 export FIO_NUMJOBS=4          # Number of parallel jobs (default: 1)
 export FIO_RUNTIME=600        # Runtime in seconds (default: 300)
@@ -77,7 +98,7 @@ export FIO_RUNTIME=600        # Runtime in seconds (default: 300)
 
 | Variable | Description | Default | Options |
 |----------|-------------|---------|---------|
-| `FIO_IOENGINE` | I/O engine to use | `libaio` | `libaio`, `io_uring`, `sync`, `psync` |
+| `FIO_IOENGINE` | I/O engine to use | `sync` | `sync`, `libaio`, `io_uring`, `psync` |
 | `FIO_IODEPTH` | I/O queue depth | `64` | Any positive integer |
 | `FIO_NUMJOBS` | Number of parallel jobs | `1` | Any positive integer |
 | `FIO_RUNTIME` | Test runtime in seconds | `300` | Any positive integer |
@@ -229,9 +250,228 @@ export FSIZE=100    # Wrong - missing unit
 - Verify storage isn't throttling
 - Consider reducing `FIO_RUNTIME` for initial tests
 
+## Makefile Reference
+
+The Makefile provides convenient commands for container management:
+
+### Build Commands
+- `make build` - Build the container image
+- `make help` - Display all available commands and configuration
+
+### Container Lifecycle
+- `make run` - Build and run container with volume mounts
+- `make start` - Start existing container
+- `make stop` - Stop running container
+- `make restart` - Restart container
+- `make remove` - Remove container
+
+### Container Interaction
+- `make shell` - Open bash shell in container
+- `make exec CMD='command'` - Execute command in container
+- `make logs` - View container logs
+- `make status` - Show container status
+
+### Testing Commands
+- `make mount-ceph` - Mount Ceph filesystem in container
+- `make run-tests` - Run FIO tests (requires Ceph mounted)
+
+### Cleanup
+- `make clean` - Stop and remove container
+- `make prune` - Remove container and image
+
+### Configuration Variables
+
+Override these when running make commands:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `IMAGE_NAME` | `fio-test-suite` | Container image name |
+| `IMAGE_TAG` | `latest` | Container image tag |
+| `CONTAINER_NAME` | `fio-test` | Container name |
+| `CEPH_CONF` | `/etc/ceph/ceph.conf` | Path to Ceph config |
+| `CEPH_KEYRING` | `/etc/ceph/ceph.client.admin.keyring` | Path to Ceph keyring |
+| `CEPH_ADMIN_KEY` | `/etc/ceph/admin.key` | Path to Ceph admin key |
+| `RESULTS_DIR` | `./fio-results` | Host directory for results |
+| `CEPH_MON_IP` | `192.168.1.10` | Ceph monitor IP |
+| `CEPH_MON_PORT` | `6789` | Ceph monitor port |
+| `FSIZE` | `100G` | FIO test file size |
+| `FNAME` | `/mnt/fio-testfile` | FIO test file path |
+| `FIO_IOENGINE` | `sync` | FIO I/O engine |
+| `FIO_IODEPTH` | `64` | FIO I/O depth |
+| `FIO_NUMJOBS` | `1` | FIO number of jobs |
+| `FIO_RUNTIME` | `300` | FIO runtime in seconds |
+
+### Makefile Examples
+
+```bash
+# Quick start with defaults
+make build
+make run
+make shell
+
+# Custom Ceph configuration
+make run \
+  CEPH_CONF=/custom/path/ceph.conf \
+  CEPH_KEYRING=/custom/path/keyring \
+  RESULTS_DIR=/var/fio-results
+
+# Mount Ceph with custom monitor
+make mount-ceph CEPH_MON_IP=10.0.0.5 CEPH_MON_PORT=6789
+
+# Run tests with custom parameters
+make run-tests \
+  FSIZE=500G \
+  FIO_IOENGINE=libaio \
+  FIO_IODEPTH=128 \
+  FIO_NUMJOBS=8 \
+  FIO_RUNTIME=600
+
+# Complete workflow
+make build                          # Build image
+make run RESULTS_DIR=/var/fio       # Start container
+make mount-ceph CEPH_MON_IP=10.0.0.5  # Mount Ceph
+make run-tests FSIZE=200G           # Run tests
+make logs                           # View output
+make clean                          # Cleanup
+```
+
+## Container Deployment
+
+### Building the Container Image
+
+```bash
+# Build the container image
+podman build -t fio-test-suite:latest -f Containerfile .
+```
+
+### Running the Container
+
+#### Basic Container Setup
+
+```bash
+podman run -d --name fio-test \
+    --privileged \
+    --net host \
+    -v /host/path/ceph.conf:/etc/ceph/ceph.conf \
+    -v /host/path/ceph.client.admin.keyring:/etc/ceph/ceph.client.admin.keyring \
+    -v /host/path/admin.key:/etc/ceph/admin.key \
+    -v /host/test/dir:/root/test \
+    fio-test-suite:latest
+```
+
+**Volume Mounts Explained:**
+- `/etc/ceph/ceph.conf`: Ceph cluster configuration
+- `/etc/ceph/ceph.client.admin.keyring`: Ceph authentication keyring
+- `/etc/ceph/admin.key`: Ceph admin secret key for mounting
+- `/root/test`: Directory for storing test results
+
+#### Accessing the Container
+
+```bash
+# Enter the running container
+podman exec -it fio-test bash
+```
+
+### Running Tests in Container
+
+#### Step 1: Mount Ceph Filesystem
+
+```bash
+# Inside the container
+mount -t ceph <mon-node-ip>:<mon-port>:/ /mnt \
+    -o name=admin,secretfile=/etc/ceph/admin.key
+
+# Example with specific monitor
+mount -t ceph 192.168.1.10:6789:/ /mnt \
+    -o name=admin,secretfile=/etc/ceph/admin.key
+
+# Verify mount
+df -h /mnt
+```
+
+#### Step 2: Configure Environment Variables
+
+```bash
+# Required variables
+export FSIZE=100G
+export FNAME=/mnt/testfile
+export TEST_DIR=/root/test
+
+# Optional: Tune FIO parameters
+export FIO_IOENGINE=libaio
+export FIO_IODEPTH=64
+export FIO_NUMJOBS=1
+export FIO_RUNTIME=300
+```
+
+#### Step 3: Run Tests
+
+```bash
+# Navigate to FIO directory
+cd /fio
+
+# Execute test suite
+./run-fio.sh
+```
+
+### Container Management
+
+```bash
+# View container logs
+podman logs fio-test
+
+# Stop container
+podman stop fio-test
+
+# Start container
+podman start fio-test
+
+# Remove container
+podman rm fio-test
+
+# View running containers
+podman ps
+```
+
+### Complete Container Workflow Example
+
+```bash
+# 1. Build image
+podman build -t fio-test-suite:latest -f Containerfile .
+
+# 2. Run container with volume mounts
+podman run -d --name fio-ceph-test \
+    --privileged \
+    --net host \
+    -v /etc/ceph/ceph.conf:/etc/ceph/ceph.conf \
+    -v /etc/ceph/ceph.client.admin.keyring:/etc/ceph/ceph.client.admin.keyring \
+    -v /etc/ceph/admin.key:/etc/ceph/admin.key \
+    -v /var/fio-results:/root/test \
+    fio-test-suite:latest
+
+# 3. Enter container
+podman exec -it fio-ceph-test bash
+
+# 4. Inside container - mount Ceph
+mount -t ceph 192.168.1.10:6789:/ /mnt -o name=admin,secretfile=/etc/ceph/admin.key
+
+# 5. Configure and run tests
+export FSIZE=100G
+export FNAME=/mnt/fio-testfile
+export TEST_DIR=/root/test
+cd /fio
+./run-fio.sh
+
+# 6. View results (from host)
+ls -lh /var/fio-results/
+cat /var/fio-results/fio-data-all.out
+```
+
 ## Examples
 
-### Quick NVMe Test
+### Standalone Examples
+
+#### Quick NVMe Test
 ```bash
 export FSIZE=50G
 export FNAME=/mnt/nvme0n1/fio-test
@@ -254,7 +494,7 @@ export FIO_RUNTIME=600
 ./run-fio.sh
 ```
 
-### Network Storage Test
+#### Network Storage Test
 ```bash
 export FSIZE=20G
 export FNAME=/mnt/nfs/fio-test
@@ -263,6 +503,108 @@ export FIO_IOENGINE=sync
 export FIO_IODEPTH=1
 export FIO_NUMJOBS=8
 ./run-fio.sh
+```
+
+### Container Examples
+
+#### Ceph Performance Test
+
+```bash
+# Inside container after mounting Ceph
+export FSIZE=200G
+export FNAME=/mnt/ceph-perf-test
+export TEST_DIR=/root/test
+export FIO_IOENGINE=libaio
+export FIO_IODEPTH=128
+export FIO_NUMJOBS=4
+export FIO_RUNTIME=600
+
+cd /fio
+./run-fio.sh
+```
+
+#### Quick Container Test (Small Dataset)
+
+```bash
+# For quick validation
+export FSIZE=10G
+export FNAME=/mnt/quick-test
+export TEST_DIR=/root/test
+export FIO_RUNTIME=60
+
+cd /fio
+./run-fio.sh
+```
+
+#### Multi-Job Parallel Test
+
+```bash
+# Test with multiple parallel jobs
+export FSIZE=500G
+export FNAME=/mnt/parallel-test
+export TEST_DIR=/root/test
+export FIO_IOENGINE=libaio
+export FIO_IODEPTH=64
+export FIO_NUMJOBS=8
+export FIO_RUNTIME=300
+
+cd /fio
+./run-fio.sh
+```
+
+## Container Troubleshooting
+
+### Ceph Mount Issues
+
+**Problem: Cannot mount Ceph filesystem**
+```bash
+# Check Ceph cluster status
+ceph -s
+
+# Verify monitor connectivity
+ping <mon-node-ip>
+
+# Check authentication
+ceph auth list
+
+# Verify keyring permissions
+ls -l /etc/ceph/ceph.client.admin.keyring
+```
+
+**Problem: Permission denied when mounting**
+```bash
+# Ensure container runs with --privileged flag
+podman run -d --name fio-test --privileged ...
+
+# Check if admin.key is readable
+cat /etc/ceph/admin.key
+```
+
+### Container Access Issues
+
+**Problem: Cannot access container**
+```bash
+# Check if container is running
+podman ps -a
+
+# View container logs
+podman logs fio-test
+
+# Restart container if needed
+podman restart fio-test
+```
+
+**Problem: Volume mounts not working**
+```bash
+# Verify host paths exist
+ls -l /host/path/ceph.conf
+ls -l /host/path/admin.key
+
+# Check SELinux context (if applicable)
+ls -Z /host/path/
+
+# Add :Z flag for SELinux
+podman run -v /host/path:/container/path:Z ...
 ```
 
 ## Contributing

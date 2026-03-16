@@ -27,7 +27,7 @@ Usage: Set the following environment variables before running:
   export TEST_DIR=/fio/test/directory  # Directory for test results
 
 Optional:
-  export FIO_IOENGINE=libaio  # I/O engine (default: sync)
+  export FIO_IOENGINE=sync    # I/O engine (default: sync)
   export FIO_IODEPTH=64       # I/O depth (default: 64)
   export FIO_NUMJOBS=1        # Number of jobs (default: 1)
   export FIO_RUNTIME=300      # Runtime in seconds (default: 300)
