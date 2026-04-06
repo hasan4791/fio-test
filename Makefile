@@ -6,10 +6,8 @@ IMAGE_TAG ?= latest
 CONTAINER_NAME ?= fio-test
 CONTAINER_RUNTIME ?= podman
 
-# Ceph configuration paths (override these with your actual paths)
-CEPH_CONF ?= /etc/ceph/ceph.conf
-CEPH_KEYRING ?= /etc/ceph/ceph.client.admin.keyring
-CEPH_ADMIN_KEY ?= /etc/ceph/admin.key
+# Ceph configuration directory (override with your actual path)
+CEPH_DIR ?= /etc/ceph
 
 # Test results directory on host
 RESULTS_DIR ?= $(PWD)/fio-results
@@ -61,16 +59,14 @@ help:
 	@echo "  IMAGE_NAME=$(IMAGE_NAME)"
 	@echo "  IMAGE_TAG=$(IMAGE_TAG)"
 	@echo "  CONTAINER_NAME=$(CONTAINER_NAME)"
-	@echo "  CEPH_CONF=$(CEPH_CONF)"
-	@echo "  CEPH_KEYRING=$(CEPH_KEYRING)"
-	@echo "  CEPH_ADMIN_KEY=$(CEPH_ADMIN_KEY)"
+	@echo "  CEPH_DIR=$(CEPH_DIR)"
 	@echo "  RESULTS_DIR=$(RESULTS_DIR)"
 	@echo "  CEPH_MON_IP=$(CEPH_MON_IP)"
 	@echo "  CEPH_MON_PORT=$(CEPH_MON_PORT)"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make build"
-	@echo "  make run RESULTS_DIR=/var/fio-results"
+	@echo "  make run CEPH_DIR=/custom/ceph RESULTS_DIR=/var/fio-results"
 	@echo "  make mount-ceph CEPH_MON_IP=10.0.0.5"
 	@echo "  make run-tests FSIZE=200G FIO_NUMJOBS=4"
 
@@ -88,25 +84,21 @@ $(RESULTS_DIR):
 # Run container with all necessary mounts
 run: build $(RESULTS_DIR)
 	@echo "Starting container: $(CONTAINER_NAME)"
-	@if [ ! -f "$(CEPH_CONF)" ]; then \
-		echo "Warning: Ceph config not found at $(CEPH_CONF)"; \
-		echo "Set CEPH_CONF=/path/to/ceph.conf if different"; \
+	@if [ ! -d "$(CEPH_DIR)" ]; then \
+		echo "Warning: Ceph directory not found at $(CEPH_DIR)"; \
+		echo "Set CEPH_DIR=/path/to/ceph/dir if different"; \
 	fi
-	@if [ ! -f "$(CEPH_KEYRING)" ]; then \
-		echo "Warning: Ceph keyring not found at $(CEPH_KEYRING)"; \
-		echo "Set CEPH_KEYRING=/path/to/keyring if different"; \
+	@if [ ! -f "$(CEPH_DIR)/ceph.conf" ]; then \
+		echo "Warning: ceph.conf not found in $(CEPH_DIR)"; \
 	fi
-	@if [ ! -f "$(CEPH_ADMIN_KEY)" ]; then \
-		echo "Warning: Ceph admin key not found at $(CEPH_ADMIN_KEY)"; \
-		echo "Set CEPH_ADMIN_KEY=/path/to/admin.key if different"; \
+	@if [ ! -f "$(CEPH_DIR)/ceph.client.admin.keyring" ]; then \
+		echo "Warning: ceph.client.admin.keyring not found in $(CEPH_DIR)"; \
 	fi
 	$(CONTAINER_RUNTIME) run -d \
 		--name $(CONTAINER_NAME) \
 		--privileged \
 		--net host \
-		-v $(CEPH_CONF):/etc/ceph/ceph.conf:ro \
-		-v $(CEPH_KEYRING):/etc/ceph/ceph.client.admin.keyring:ro \
-		-v $(CEPH_ADMIN_KEY):/etc/ceph/admin.key:ro \
+		-v $(CEPH_DIR):/etc/ceph:ro \
 		-v $(RESULTS_DIR):/root/test \
 		$(IMAGE_NAME):$(IMAGE_TAG)
 	@echo "Container started successfully!"

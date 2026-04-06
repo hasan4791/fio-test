@@ -5,6 +5,15 @@ set -exao pipefail
 # Check ceph version
 ceph version
 
+# Generate admin.key from keyring
+echo "Generating admin.key from ceph.client.admin.keyring..."
+if [[ -f /etc/ceph/ceph.client.admin.keyring ]]; then
+    ceph-authtool -p /etc/ceph/ceph.client.admin.keyring > /etc/ceph/admin.key
+    echo "admin.key generated successfully"
+else
+    echo "Warning: /etc/ceph/ceph.client.admin.keyring not found. admin.key not generated."
+fi
+
 # Display setup and usage instructions
 cat << 'EOF'
 
@@ -19,9 +28,10 @@ podman run -d --name <container-name> \
     --net host \
     -v /host/path/ceph.conf:/etc/ceph/ceph.conf \
     -v /host/path/ceph.client.admin.keyring:/etc/ceph/ceph.client.admin.keyring \
-    -v /host/path/admin.key:/etc/ceph/admin.key \
     -v /host/test/dir:/root/test \
     <image-name>
+
+NOTE: admin.key is now generated automatically from ceph.client.admin.keyring
 
 MOUNT CEPH FILESYSTEM:
 ----------------------
