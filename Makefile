@@ -15,6 +15,7 @@ RESULTS_DIR ?= $(PWD)/fio-results
 # Ceph monitor configuration (override when running)
 CEPH_MON_IP ?= localhost
 CEPH_MON_PORT ?= 6789
+CEPH_FS ?= cephfs
 
 # FIO test configuration
 FSIZE ?= 100G
@@ -63,11 +64,12 @@ help:
 	@echo "  RESULTS_DIR=$(RESULTS_DIR)"
 	@echo "  CEPH_MON_IP=$(CEPH_MON_IP)"
 	@echo "  CEPH_MON_PORT=$(CEPH_MON_PORT)"
+	@echo "  CEPH_FS=$(CEPH_FS)"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make build"
 	@echo "  make run CEPH_DIR=/custom/ceph RESULTS_DIR=/var/fio-results"
-	@echo "  make mount-ceph CEPH_MON_IP=10.0.0.5"
+	@echo "  make mount-ceph CEPH_MON_IP=10.0.0.5 CEPH_FS=mycephfs"
 	@echo "  make run-tests FSIZE=200G FIO_NUMJOBS=4"
 
 # Build the container image
@@ -98,7 +100,7 @@ run: build $(RESULTS_DIR)
 		--name $(CONTAINER_NAME) \
 		--privileged \
 		--net host \
-		-v $(CEPH_DIR):/etc/ceph:ro \
+		-v $(CEPH_DIR):/etc/ceph \
 		-v $(RESULTS_DIR):/root/test \
 		$(IMAGE_NAME):$(IMAGE_TAG)
 	@echo "Container started successfully!"
@@ -149,9 +151,10 @@ status:
 mount-ceph:
 	@echo "Mounting Ceph filesystem..."
 	@echo "Monitor: $(CEPH_MON_IP):$(CEPH_MON_PORT)"
+	@echo "Filesystem: $(CEPH_FS)"
 	$(CONTAINER_RUNTIME) exec $(CONTAINER_NAME) bash -c "\
 		mount -t ceph $(CEPH_MON_IP):$(CEPH_MON_PORT):/ /mnt \
-		-o name=admin,secretfile=/etc/ceph/admin.key && \
+		-o name=admin,secretfile=/etc/ceph/admin.key,fs=$(CEPH_FS) && \
 		echo 'Ceph mounted successfully at /mnt' && \
 		df -h /mnt"
 
