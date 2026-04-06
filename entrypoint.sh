@@ -2,8 +2,31 @@
 
 set -exao pipefail
 
+# Validate required Ceph configuration files
+echo "Validating Ceph configuration..."
+
+if [[ ! -f /etc/ceph/ceph.conf ]]; then
+    echo "Error: /etc/ceph/ceph.conf not found!"
+    echo "Please mount the Ceph configuration directory with:"
+    echo "  -v /host/path/to/ceph:/etc/ceph"
+    exit 1
+fi
+
+if [[ ! -f /etc/ceph/ceph.client.admin.keyring ]]; then
+    echo "Error: /etc/ceph/ceph.client.admin.keyring not found!"
+    echo "Please ensure the Ceph keyring file exists in the mounted directory."
+    exit 1
+fi
+
+echo "Ceph configuration files validated successfully"
+
 # Check ceph version
 ceph version
+
+# Generate admin.key from keyring
+echo "Generating admin.key from ceph.client.admin.keyring..."
+ceph-authtool -p /etc/ceph/ceph.client.admin.keyring > /etc/ceph/admin.key
+echo "admin.key generated successfully"
 
 # Display setup and usage instructions
 cat << 'EOF'
@@ -17,11 +40,13 @@ CONTAINER SETUP:
 podman run -d --name <container-name> \
     --privileged \
     --net host \
-    -v /host/path/ceph.conf:/etc/ceph/ceph.conf \
-    -v /host/path/ceph.client.admin.keyring:/etc/ceph/ceph.client.admin.keyring \
-    -v /host/path/admin.key:/etc/ceph/admin.key \
+    -v /host/path/to/ceph:/etc/ceph \
     -v /host/test/dir:/root/test \
     <image-name>
+
+NOTES:
+- Mount the entire Ceph config directory (must contain ceph.conf and ceph.client.admin.keyring)
+- admin.key is automatically generated from ceph.client.admin.keyring at startup
 
 MOUNT CEPH FILESYSTEM:
 ----------------------

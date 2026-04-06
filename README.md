@@ -50,7 +50,14 @@ This suite consists of two main scripts:
 
 ### Container Usage
 - **Podman** or **Docker** container runtime
-- Ceph configuration files (for Ceph filesystem testing)
+- **Ceph repository files** (*.repo files for building the container image)
+  - Required for installing Ceph packages during container build
+  - Place custom Ceph repo files in the project root directory
+  - These files are copied to `/etc/yum.repos.d/` during build
+- **Ceph configuration files** (for Ceph filesystem testing)
+  - `ceph.conf` - Ceph cluster configuration
+  - `ceph.client.admin.keyring` - Ceph authentication keyring
+  - Mount the directory containing these files to `/etc/ceph` in the container
 
 ## Quick Start
 
@@ -288,18 +295,22 @@ Override these when running make commands:
 | `IMAGE_NAME` | `fio-test-suite` | Container image name |
 | `IMAGE_TAG` | `latest` | Container image tag |
 | `CONTAINER_NAME` | `fio-test` | Container name |
-| `CEPH_CONF` | `/etc/ceph/ceph.conf` | Path to Ceph config |
-| `CEPH_KEYRING` | `/etc/ceph/ceph.client.admin.keyring` | Path to Ceph keyring |
-| `CEPH_ADMIN_KEY` | `/etc/ceph/admin.key` | Path to Ceph admin key |
+| `CEPH_DIR` | `/etc/ceph` | Path to Ceph config directory |
 | `RESULTS_DIR` | `./fio-results` | Host directory for results |
-| `CEPH_MON_IP` | `192.168.1.10` | Ceph monitor IP |
+| `CEPH_MON_IP` | `localhost` | Ceph monitor IP |
 | `CEPH_MON_PORT` | `6789` | Ceph monitor port |
+| `CEPH_FS` | `cephfs` | Ceph filesystem name |
 | `FSIZE` | `100G` | FIO test file size |
 | `FNAME` | `/mnt/fio-testfile` | FIO test file path |
 | `FIO_IOENGINE` | `sync` | FIO I/O engine |
 | `FIO_IODEPTH` | `64` | FIO I/O depth |
 | `FIO_NUMJOBS` | `1` | FIO number of jobs |
 | `FIO_RUNTIME` | `300` | FIO runtime in seconds |
+
+**Note:** The `CEPH_DIR` should contain:
+- `ceph.conf` - Ceph cluster configuration
+- `ceph.client.admin.keyring` - Ceph authentication keyring
+- `admin.key` will be auto-generated from the keyring
 
 ### Makefile Examples
 
@@ -311,12 +322,11 @@ make shell
 
 # Custom Ceph configuration
 make run \
-  CEPH_CONF=/custom/path/ceph.conf \
-  CEPH_KEYRING=/custom/path/keyring \
+  CEPH_DIR=/custom/path/to/ceph \
   RESULTS_DIR=/var/fio-results
 
-# Mount Ceph with custom monitor
-make mount-ceph CEPH_MON_IP=10.0.0.5 CEPH_MON_PORT=6789
+# Mount Ceph with custom monitor and filesystem
+make mount-ceph CEPH_MON_IP=10.0.0.5 CEPH_MON_PORT=6789 CEPH_FS=mycephfs
 
 # Run tests with custom parameters
 make run-tests \
@@ -327,12 +337,12 @@ make run-tests \
   FIO_RUNTIME=600
 
 # Complete workflow
-make build                          # Build image
-make run RESULTS_DIR=/var/fio       # Start container
-make mount-ceph CEPH_MON_IP=10.0.0.5  # Mount Ceph
-make run-tests FSIZE=200G           # Run tests
-make logs                           # View output
-make clean                          # Cleanup
+make build                                    # Build image
+make run RESULTS_DIR=/var/fio                 # Start container
+make mount-ceph CEPH_MON_IP=10.0.0.5 CEPH_FS=mycephfs  # Mount Ceph
+make run-tests FSIZE=200G                     # Run tests
+make logs                                     # View output
+make clean                                    # Cleanup
 ```
 
 ## Container Deployment
@@ -352,18 +362,21 @@ podman build -t fio-test-suite:latest -f Containerfile .
 podman run -d --name fio-test \
     --privileged \
     --net host \
-    -v /host/path/ceph.conf:/etc/ceph/ceph.conf \
-    -v /host/path/ceph.client.admin.keyring:/etc/ceph/ceph.client.admin.keyring \
-    -v /host/path/admin.key:/etc/ceph/admin.key \
+    -v /host/path/to/ceph:/etc/ceph \
     -v /host/test/dir:/root/test \
     fio-test-suite:latest
 ```
 
 **Volume Mounts Explained:**
-- `/etc/ceph/ceph.conf`: Ceph cluster configuration
-- `/etc/ceph/ceph.client.admin.keyring`: Ceph authentication keyring
-- `/etc/ceph/admin.key`: Ceph admin secret key for mounting
+- `/etc/ceph`: Ceph configuration directory (read-write for admin.key generation)
+  - Must contain `ceph.conf` and `ceph.client.admin.keyring`
+  - `admin.key` is automatically generated at startup
 - `/root/test`: Directory for storing test results
+
+**Note:** The `admin.key` file is automatically generated at container startup from the `ceph.client.admin.keyring` using:
+```bash
+ceph-authtool -p /etc/ceph/ceph.client.admin.keyring > /etc/ceph/admin.key
+```
 
 #### Accessing the Container
 
@@ -379,15 +392,17 @@ podman exec -it fio-test bash
 ```bash
 # Inside the container
 mount -t ceph <mon-node-ip>:<mon-port>:/ /mnt \
-    -o name=admin,secretfile=/etc/ceph/admin.key
+    -o name=admin,secretfile=/etc/ceph/admin.key,fs=<filesystem-name>
 
-# Example with specific monitor
+# Example with specific monitor and filesystem
 mount -t ceph 192.168.1.10:6789:/ /mnt \
-    -o name=admin,secretfile=/etc/ceph/admin.key
+    -o name=admin,secretfile=/etc/ceph/admin.key,fs=cephfs
 
 # Verify mount
 df -h /mnt
 ```
+
+**Note:** The `fs=<filesystem-name>` option specifies which CephFS filesystem to mount. Default is typically `cephfs`.
 
 #### Step 2: Configure Environment Variables
 
@@ -443,9 +458,7 @@ podman build -t fio-test-suite:latest -f Containerfile .
 podman run -d --name fio-ceph-test \
     --privileged \
     --net host \
-    -v /etc/ceph/ceph.conf:/etc/ceph/ceph.conf \
-    -v /etc/ceph/ceph.client.admin.keyring:/etc/ceph/ceph.client.admin.keyring \
-    -v /etc/ceph/admin.key:/etc/ceph/admin.key \
+    -v /etc/ceph:/etc/ceph \
     -v /var/fio-results:/root/test \
     fio-test-suite:latest
 
@@ -453,7 +466,7 @@ podman run -d --name fio-ceph-test \
 podman exec -it fio-ceph-test bash
 
 # 4. Inside container - mount Ceph
-mount -t ceph 192.168.1.10:6789:/ /mnt -o name=admin,secretfile=/etc/ceph/admin.key
+mount -t ceph 192.168.1.10:6789:/ /mnt -o name=admin,secretfile=/etc/ceph/admin.key,fs=cephfs
 
 # 5. Configure and run tests
 export FSIZE=100G
@@ -576,8 +589,14 @@ ls -l /etc/ceph/ceph.client.admin.keyring
 # Ensure container runs with --privileged flag
 podman run -d --name fio-test --privileged ...
 
-# Check if admin.key is readable
+# Check if admin.key was generated successfully
 cat /etc/ceph/admin.key
+
+# If admin.key is missing, check if keyring exists
+ls -l /etc/ceph/ceph.client.admin.keyring
+
+# Manually regenerate if needed
+ceph-authtool -p /etc/ceph/ceph.client.admin.keyring > /etc/ceph/admin.key
 ```
 
 ### Container Access Issues
@@ -596,15 +615,31 @@ podman restart fio-test
 
 **Problem: Volume mounts not working**
 ```bash
-# Verify host paths exist
-ls -l /host/path/ceph.conf
-ls -l /host/path/admin.key
+# Verify Ceph directory exists and contains required files
+ls -l /etc/ceph/
+ls -l /etc/ceph/ceph.conf
+ls -l /etc/ceph/ceph.client.admin.keyring
 
 # Check SELinux context (if applicable)
-ls -Z /host/path/
+ls -Z /etc/ceph/
 
-# Add :Z flag for SELinux
-podman run -v /host/path:/container/path:Z ...
+# Add :z flag for SELinux (lowercase for shared mount)
+podman run -v /etc/ceph:/etc/ceph:z ...
+```
+
+**Problem: admin.key not generated**
+```bash
+# Check container logs for generation errors
+podman logs fio-test | grep admin.key
+
+# Verify Ceph directory is mounted correctly
+podman exec fio-test ls -l /etc/ceph/
+
+# Check if keyring exists
+podman exec fio-test ls -l /etc/ceph/ceph.client.admin.keyring
+
+# Manually generate inside container if needed
+podman exec fio-test bash -c "ceph-authtool -p /etc/ceph/ceph.client.admin.keyring > /etc/ceph/admin.key"
 ```
 
 ## Contributing
